@@ -15,3 +15,85 @@
 */
 
 package apachepulsar
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/apache/pulsar-client-go/pulsar"
+	"github.com/numaproj-contrib/numaflow-utils-go/testing/fixtures"
+	"github.com/stretchr/testify/suite"
+)
+
+const (
+	host             = "pulsar://localhost:6650"
+	topic            = "testTopic"
+	subscriptionName = "testSubscription"
+)
+
+type ApachePulsarSuite struct {
+	fixtures.E2ESuite
+}
+
+func (suite *ApachePulsarSuite) SetupTest() {
+	// Create Pulsar resources
+	apachePulsarDeleteCmd := fmt.Sprintf("kubectl delete -k ../../config/apps/apachepulsar -n %s --ignore-not-found=true", fixtures.Namespace)
+	suite.Given().When().Exec("sh", []string{"-c", apachePulsarDeleteCmd}, fixtures.OutputRegexp(""))
+	apachePulsarCreateCmd := fmt.Sprintf("kubectl apply -k ../../config/apps/apachepulsar -n %s", fixtures.Namespace)
+	suite.Given().When().Exec("sh", []string{"-c", apachePulsarCreateCmd}, fixtures.OutputRegexp("service/pulsar-broker created"))
+	pulsarLabelSelector := fmt.Sprintf("app=%s", "pulsar-broker")
+	//suite.Given().When().WaitForStatefulSetReady(pulsarLabelSelector)
+	suite.Given().When().WaitForPodReady("pulsar-broker-0", pulsarLabelSelector)
+	suite.T().Log("apache pulsar resources are ready")
+	suite.T().Log("port forwarding apache pulsar service")
+	suite.StartPortForward("pulsar-broker-0", 6650)
+}
+
+func initClient() (pulsar.Client, error) {
+	pulsarClient, err := pulsar.NewClient(pulsar.ClientOptions{
+		URL:               host,
+		OperationTimeout:  30 * time.Second,
+		ConnectionTimeout: 30 * time.Second,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pulsarClient, nil
+}
+
+func ifPulsarContainsMessage(client pulsar.Client, ctx context.Context) (bool, error) {
+	subscribe, err := client.Subscribe(pulsar.ConsumerOptions{
+		Topic:            topic,
+		SubscriptionName: subscriptionName,
+		Type:             pulsar.Shared,
+	})
+	if err != nil {
+		return false, err
+	}
+	_, err = subscribe.Receive(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (a *ApachePulsarSuite) TestApachePulsarSink() {
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	w := a.Given().Pipeline("@testdata/apachepulsar_sink.yaml").
+		When().
+		CreatePipelineAndWait()
+	w.Expect().VertexPodsRunning()
+	client, err := initClient()
+	a.NoError(err)
+	message, err := ifPulsarContainsMessage(client, ctx)
+	a.NoError(err)
+	a.True(message)
+	w.DeletePipelineAndWait(3 * time.Minute)
+}
+
+func TestApachePulsarSourceSuite(t *testing.T) {
+	suite.Run(t, new(ApachePulsarSuite))
+}

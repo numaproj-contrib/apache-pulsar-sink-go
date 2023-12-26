@@ -82,21 +82,10 @@ cleanup-e2e:
 .PHONY: test-e2e
 test-e2e:
 	$(MAKE) cleanup-e2e
-	$(MAKE) e2eapi-image
 	kubectl -n numaflow-system delete po -lapp.kubernetes.io/component=controller-manager,app.kubernetes.io/part-of=numaflow
-	kubectl -n numaflow-system delete po e2e-api-pod  --ignore-not-found=true
-	cat test/manifests/e2e-api-pod.yaml |  sed 's@quay.io/numaio/numaflow-go/@$(IMAGE_NAMESPACE)/@' | sed 's/:latest/:$(VERSION)/' | kubectl -n numaflow-system apply -f -
 	go generate $(shell find ./pkg/e2e/test$* -name '*.go')
 	go test -v -timeout 15m -count 1 --tags test -p 1 ./test/apachepulsar/apachepulsar_e2e_test.go
-	$(MAKE) cleanup-e2e
 
-.PHONY: e2eapi-image
-e2eapi-image: clean dist/e2eapi
-	DOCKER_BUILDKIT=1 $(DOCKER) build . --build-arg "ARCH=amd64" --target e2eapi --tag $(IMAGE_NAMESPACE)/e2eapi:$(VERSION) --build-arg VERSION="$(VERSION)"
-	@if [[ "$(DOCKER_PUSH)" = "true" ]]; then $(DOCKER) push $(IMAGE_NAMESPACE)/e2eapi:$(VERSION); fi
-ifdef IMAGE_IMPORT_CMD
-	$(IMAGE_IMPORT_CMD) $(IMAGE_NAMESPACE)/e2eapi:$(VERSION)
-endif
 clean:
 	-rm -rf ${CURRENT_DIR}/dist
 
