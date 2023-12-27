@@ -116,9 +116,6 @@ spec:
     - from: in
       to: out
 ```
-
-Replace `your-custom-image-for-pulsar-sink` with the Docker image of your Apache Pulsar sink.
-
 Then apply it to your cluster:
 ```bash
 kubectl apply -f pulsar-sink-pipeline.yaml
