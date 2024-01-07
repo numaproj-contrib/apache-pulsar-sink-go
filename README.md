@@ -130,6 +130,9 @@ Ensure that messages are being published to Apache Pulsar topics as expected.
 To delete the Numaflow pipeline:
 ```bash
 kubectl delete -f pulsar-sink-pipeline.yaml
+# Remove Docker volumes
+# Replace with your volume names
+docker volume rm pulsar-data-volume pulsar-config-volume
 ```
 
 Congratulations! You have successfully set up an Apache Pulsar sink in a Numaflow pipeline.

@@ -18,8 +18,10 @@ package apachepulsar
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -27,21 +29,29 @@ import (
 	sinksdk "github.com/numaproj/numaflow-go/pkg/sinker"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	pulsaradmin "github.com/streamnative/pulsar-admin-go"
+	"github.com/streamnative/pulsar-admin-go/pkg/utils"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/numaproj-contrib/apache-pulsar-sink-go/pkg/mocks"
+	"github.com/numaproj-contrib/apache-pulsar-sink-go/pkg/payloads"
 )
 
 var (
 	pulsarClient pulsar.Client
+	pulsarAdmin  pulsaradmin.Client
 	resource     *dockertest.Resource
 	pool         *dockertest.Pool
 )
 
 const (
-	host             = "pulsar://localhost:6650"
-	topic            = "test-topic"
-	subscriptionName = "test-subscription"
+	host                = "pulsar://localhost:6650"
+	topic               = "test-topic"
+	tenant              = "public"
+	namespace           = "test-namespace"
+	pulsarAdminEndPoint = "http://localhost:8080"
+	confDir             = "pulsarConf"
+	dataDir             = "pulsarDatDir"
+	partitions          = 2
 )
 
 func initProducer(client pulsar.Client) (pulsar.Producer, error) {
@@ -55,7 +65,30 @@ func initProducer(client pulsar.Client) (pulsar.Producer, error) {
 	return producer, nil
 }
 
+func createTopic(tenant, namespace, topic string, partitions int) error {
+	topicPulsar, _ := utils.GetTopicName(fmt.Sprintf("%s/%s/%s", tenant, namespace, topic))
+	err := pulsarAdmin.Topics().Create(*topicPulsar, partitions)
+	if err != nil {
+		log.Printf("error creating topic %s", err)
+		return err
+	}
+	return nil
+}
+
+func removeDockerVolume(volumeName string) {
+	cmd := exec.Command("docker", "volume", "rm", volumeName)
+	if err := cmd.Run(); err != nil {
+		log.Printf("Failed to remove Docker volume %s: %s", volumeName, err)
+	}
+}
+
+func setEnv() {
+	os.Setenv("PULSAR_TENANT", tenant)
+	os.Setenv("PULSAR_NAMESPACE", namespace)
+}
+
 func TestMain(m *testing.M) {
+
 	var err error
 	p, err := dockertest.NewPool("")
 	if err != nil {
@@ -74,7 +107,7 @@ func TestMain(m *testing.M) {
 				{HostIP: "127.0.0.1", HostPort: "8080"},
 			},
 		},
-		Mounts: []string{"pulsardata:/pulsar/data", "pulsarconf:/pulsar/conf"},
+		Mounts: []string{fmt.Sprintf("%s:/pulsar/data", dataDir), fmt.Sprintf("%s:/pulsar/conf", confDir)},
 		Cmd:    []string{"bin/pulsar", "standalone"},
 	}
 	resource, err = pool.RunWithOptions(&opts)
@@ -95,6 +128,14 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			log.Fatalf("failed to create pulsar client: %v", err)
 		}
+		cfg := &pulsaradmin.Config{
+			WebServiceURL: pulsarAdminEndPoint,
+		}
+		pulsarAdmin, err = pulsaradmin.NewClient(cfg)
+		if err != nil {
+			log.Fatalf("failed to create pulsar admin client: %v", err)
+		}
+
 		return nil
 	}); err != nil {
 		if resource != nil {
@@ -102,13 +143,30 @@ func TestMain(m *testing.M) {
 		}
 		log.Fatalf("could not connect to apache pulsar %s", err)
 	}
-	defer pulsarClient.Close()
+	// waiting for pulsar admin to be ready
+	time.Sleep(10 * time.Second)
+	// Create a new namespace
+	err = pulsarAdmin.Namespaces().CreateNamespace(fmt.Sprintf("%s/%s", tenant, namespace))
+	if err != nil {
+		log.Fatalf("failed to create pulsar namespace: %v", err)
+
+	}
+	err = createTopic(tenant, namespace, topic, partitions)
+	if err != nil {
+		log.Fatalf("failed to create pulsar topic %s: %v", topic, err)
+	}
+
+	setEnv()
 	code := m.Run()
+	defer pulsarClient.Close()
 	if resource != nil {
 		if err := pool.Purge(resource); err != nil {
 			log.Fatalf("Couln't purge resource %s", err)
 		}
 	}
+	// removing persistent docker volumes
+	removeDockerVolume(dataDir)
+	removeDockerVolume(confDir)
 	os.Exit(code)
 }
 
@@ -120,8 +178,8 @@ func TestPulsarSink_Sink(t *testing.T) {
 	pulsarSink := NewPulsarSink(pulsarClient, producer)
 	ch := make(chan sinksdk.Datum, 20)
 	for i := 0; i < 20; i++ {
-		ch <- mocks.Payload{
-			Data: "pubsub test",
+		ch <- payloads.Payload{
+			Data: "apache pulsar test",
 		}
 	}
 	close(ch)

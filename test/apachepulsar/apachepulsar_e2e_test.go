@@ -21,18 +21,25 @@ package apachepulsar
 import (
 	"context"
 	"fmt"
+	"log"
 	"testing"
 	"time"
 
 	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/numaproj-contrib/numaflow-utils-go/testing/fixtures"
+	pulsaradmin "github.com/streamnative/pulsar-admin-go"
+	"github.com/streamnative/pulsar-admin-go/pkg/utils"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
 const (
-	host             = "pulsar://localhost:6650"
-	topic            = "testTopic"
-	subscriptionName = "testSubscription"
+	host                = "pulsar://localhost:6650"
+	topic               = "testTopic"
+	subscriptionName    = "testSubscription"
+	tenant              = "public"
+	namespace           = "test-namespace"
+	pulsarAdminEndPoint = "http://localhost:8080"
 )
 
 type ApachePulsarSuite struct {
@@ -46,11 +53,12 @@ func (suite *ApachePulsarSuite) SetupTest() {
 	apachePulsarCreateCmd := fmt.Sprintf("kubectl apply -k ../../config/apps/apachepulsar -n %s", fixtures.Namespace)
 	suite.Given().When().Exec("sh", []string{"-c", apachePulsarCreateCmd}, fixtures.OutputRegexp("service/pulsar-broker created"))
 	pulsarLabelSelector := fmt.Sprintf("app=%s", "pulsar-broker")
-	//suite.Given().When().WaitForStatefulSetReady(pulsarLabelSelector)
 	suite.Given().When().WaitForPodReady("pulsar-broker-0", pulsarLabelSelector)
 	suite.T().Log("apache pulsar resources are ready")
 	suite.T().Log("port forwarding apache pulsar service")
 	suite.StartPortForward("pulsar-broker-0", 6650)
+	suite.StartPortForward("pulsar-broker-0", 8080)
+
 }
 
 func initClient() (pulsar.Client, error) {
@@ -65,24 +73,53 @@ func initClient() (pulsar.Client, error) {
 	return pulsarClient, nil
 }
 
+func initAdminClient() (pulsaradmin.Client, error) {
+	cfg := &pulsaradmin.Config{
+		WebServiceURL: pulsarAdminEndPoint,
+	}
+	pulsarAdmin, err := pulsaradmin.NewClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return pulsarAdmin, err
+}
+
+func createTopic(pulsarAdmin pulsaradmin.Client, tenant, namespace, topic string, partitions int) error {
+	topicPulsar, _ := utils.GetTopicName(fmt.Sprintf("%s/%s/%s", tenant, namespace, topic))
+	err := pulsarAdmin.Topics().Create(*topicPulsar, partitions)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func createNameSpace(pulsarAdmin pulsaradmin.Client) error {
+	err := pulsarAdmin.Namespaces().CreateNamespace(fmt.Sprintf("%s/%s", tenant, namespace))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func ifPulsarContainsMessage(client pulsar.Client, ctx context.Context) (bool, error) {
 	subscribe, err := client.Subscribe(pulsar.ConsumerOptions{
-		Topic:            topic,
+		Topic:            fmt.Sprintf("%s/%s/%s", tenant, namespace, topic),
 		SubscriptionName: subscriptionName,
 		Type:             pulsar.Shared,
 	})
 	if err != nil {
 		return false, err
 	}
-	_, err = subscribe.Receive(ctx)
+	msg, err := subscribe.Receive(ctx)
 	if err != nil {
 		return false, err
 	}
+	log.Println(string(msg.Payload()))
 	return true, nil
 }
 
 func (a *ApachePulsarSuite) TestApachePulsarSink() {
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	w := a.Given().Pipeline("@testdata/apachepulsar_sink.yaml").
 		When().
@@ -90,6 +127,12 @@ func (a *ApachePulsarSuite) TestApachePulsarSink() {
 	w.Expect().VertexPodsRunning()
 	client, err := initClient()
 	a.NoError(err)
+	adminClient, err := initAdminClient()
+	assert.Nil(a.T(), err)
+	err = createNameSpace(adminClient)
+	assert.Nil(a.T(), err)
+	err = createTopic(adminClient, tenant, namespace, topic, 2)
+	assert.Nil(a.T(), err)
 	message, err := ifPulsarContainsMessage(client, ctx)
 	a.NoError(err)
 	a.True(message)

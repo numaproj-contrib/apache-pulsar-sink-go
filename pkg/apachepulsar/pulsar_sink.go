@@ -22,6 +22,8 @@ import (
 	"github.com/AthenZ/athenz/libs/go/athenz-common/log"
 	"github.com/apache/pulsar-client-go/pulsar"
 	sinksdk "github.com/numaproj/numaflow-go/pkg/sinker"
+
+	"github.com/numaproj-contrib/apache-pulsar-sink-go/pkg/payloads"
 )
 
 type PulsarSink struct {
@@ -34,27 +36,29 @@ func NewPulsarSink(client pulsar.Client, producer pulsar.Producer) *PulsarSink {
 		client:   client,
 		producer: producer,
 	}
-
 }
 
 func (ps *PulsarSink) Sink(ctx context.Context, datumStreamCh <-chan sinksdk.Datum) sinksdk.Responses {
 	responses := sinksdk.ResponsesBuilder()
-	var results []pulsar.MessageID
+	var results []payloads.SendResult
 	for datum := range datumStreamCh {
 		send, err := ps.producer.Send(ctx, &pulsar.ProducerMessage{
 			Payload: datum.Value(),
 		})
+		result := payloads.SendResult{
+			MessageID: send,
+			Err:       err,
+		}
+		results = append(results, result)
 		if err != nil {
 			log.Printf("error sending message to pulsar sink %s", err)
 		}
-		results = append(results, send)
 	}
 	for _, res := range results {
-		responses = append(responses, sinksdk.Response{
-			ID:      res.String(),
-			Success: true,
-			Err:     "",
-		})
+		if res.Err != nil {
+			responses = append(responses, sinksdk.ResponseFailure(res.MessageID.String(), res.Err.Error()))
+		}
+		responses = append(responses, sinksdk.ResponseOK(res.MessageID.String()))
 	}
 	return responses
 }

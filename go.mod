@@ -9,7 +9,7 @@ require (
 	github.com/numaproj-contrib/numaflow-utils-go v0.0.8
 	github.com/numaproj/numaflow-go v0.6.0
 	github.com/ory/dockertest/v3 v3.10.0
-	github.com/redis/go-redis/v9 v9.3.1
+	github.com/streamnative/pulsar-admin-go v0.1.1
 	github.com/stretchr/testify v1.8.4
 )
 
@@ -32,7 +32,6 @@ require (
 	github.com/containerd/continuity v0.3.0 // indirect
 	github.com/danieljoos/wincred v1.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/docker/cli v20.10.17+incompatible // indirect
 	github.com/docker/docker v20.10.7+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect

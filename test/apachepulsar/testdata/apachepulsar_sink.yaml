@@ -21,6 +21,10 @@ spec:
                 value: "testTopic"
               - name: PULSAR_SUBSCRIPTION_NAME
                 value: "testSubscription"
+              - name: PULSAR_TENANT
+                value: "public"       #Default is public
+              - name: PULSAR_NAMESPACE
+                value: "test-namespace"
               - name: PULSAR_HOST
                 value: "pulsar-broker.numaflow-system.svc.cluster.local:6650"
               - name: PULSAR_ADMIN_ENDPOINT

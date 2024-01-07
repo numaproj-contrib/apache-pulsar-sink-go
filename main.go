@@ -32,6 +32,8 @@ import (
 func main() {
 	topic := os.Getenv("PULSAR_TOPIC")
 	host := os.Getenv("PULSAR_HOST")
+	tenant := os.Getenv("PULSAR_TENANT")
+	nameSpace := os.Getenv("PULSAR_NAMESPACE")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -46,7 +48,7 @@ func main() {
 	}
 
 	producer, err := client.CreateProducer(pulsar.ProducerOptions{
-		Topic: topic,
+		Topic: fmt.Sprintf("%s/%s/%s", tenant, nameSpace, topic),
 	})
 
 	if err != nil {

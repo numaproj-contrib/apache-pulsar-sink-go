@@ -83,7 +83,6 @@ cleanup-e2e:
 test-e2e:
 	$(MAKE) cleanup-e2e
 	kubectl -n numaflow-system delete po -lapp.kubernetes.io/component=controller-manager,app.kubernetes.io/part-of=numaflow
-	go generate $(shell find ./pkg/e2e/test$* -name '*.go')
 	go test -v -timeout 15m -count 1 --tags test -p 1 ./test/apachepulsar/apachepulsar_e2e_test.go
 
 clean:

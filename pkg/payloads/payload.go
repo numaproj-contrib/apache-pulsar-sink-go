@@ -14,11 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package mocks
+package payloads
 
 import (
 	"time"
 
+	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/google/uuid"
 )
 
@@ -41,4 +42,9 @@ func (p Payload) Watermark() time.Time {
 }
 func (p Payload) ID() string {
 	return uuid.New().String()
+}
+
+type SendResult struct {
+	MessageID pulsar.MessageID
+	Err       error
 }
