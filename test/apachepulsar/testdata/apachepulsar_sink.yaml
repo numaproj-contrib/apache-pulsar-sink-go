@@ -1,0 +1,35 @@
+apiVersion: numaflow.numaproj.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: apache-pulsar-sink
+spec:
+  limits:
+    readBatchSize: 10
+  vertices:
+    - name: in
+      source:
+        generator:
+          rpu: 5
+          duration: 5s
+    - name: pulsar-sink
+      sink:
+        udsink:
+          container:
+            image: "quay.io/numaio/numaflow-go/apache-pulsar-sink-go:latest"
+            env:
+              - name: PULSAR_TOPIC
+                value: "testTopic"
+              - name: PULSAR_SUBSCRIPTION_NAME
+                value: "testSubscription"
+              - name: PULSAR_TENANT
+                value: "public"       #Default is public
+              - name: PULSAR_NAMESPACE
+                value: "test-namespace"
+              - name: PULSAR_HOST
+                value: "pulsar-broker.numaflow-system.svc.cluster.local:6650"
+              - name: PULSAR_ADMIN_ENDPOINT
+                value: "http://pulsar-broker.numaflow-system.svc.cluster.local:8080"
+  edges:
+    - from: in
+      to: pulsar-sink
+
