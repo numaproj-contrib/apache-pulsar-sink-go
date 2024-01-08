@@ -21,7 +21,7 @@ package apachepulsar
 import (
 	"context"
 	"fmt"
-	"log"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,7 +101,7 @@ func createNameSpace(pulsarAdmin pulsaradmin.Client) error {
 	return nil
 }
 
-func ifPulsarContainsMessage(client pulsar.Client, ctx context.Context) (bool, error) {
+func ifPulsarContainsMessage(client pulsar.Client, ctx context.Context, data string) (bool, error) {
 	subscribe, err := client.Subscribe(pulsar.ConsumerOptions{
 		Topic:            fmt.Sprintf("%s/%s/%s", tenant, namespace, topic),
 		SubscriptionName: subscriptionName,
@@ -114,11 +114,14 @@ func ifPulsarContainsMessage(client pulsar.Client, ctx context.Context) (bool, e
 	if err != nil {
 		return false, err
 	}
-	log.Println(string(msg.Payload()))
-	return true, nil
+	if strings.Contains(string(msg.Payload()), data) {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (a *ApachePulsarSuite) TestApachePulsarSink() {
+	data := "Createdts"
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	w := a.Given().Pipeline("@testdata/apachepulsar_sink.yaml").
@@ -133,7 +136,7 @@ func (a *ApachePulsarSuite) TestApachePulsarSink() {
 	assert.Nil(a.T(), err)
 	err = createTopic(adminClient, tenant, namespace, topic, 2)
 	assert.Nil(a.T(), err)
-	message, err := ifPulsarContainsMessage(client, ctx)
+	message, err := ifPulsarContainsMessage(client, ctx, data)
 	a.NoError(err)
 	a.True(message)
 	w.DeletePipelineAndWait(3 * time.Minute)
